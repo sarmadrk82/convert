@@ -265,4 +265,4 @@ def read_file(file_with_path):
 
 
 if __name__ == "__main__":
-    read_file('/Users/radha/PycharmProjects/Convert/venv/sample.sql')
+    read_file('/Users/radha/PycharmProjects/Convert/sample.sql')
