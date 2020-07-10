@@ -33,8 +33,8 @@ def format_code(input_array):
 def replace_datatypes(in_string):
     # replace varchar2 and char with a string,
     # integer with int64
-    a = in_string.replace('varchar2', 'string') \
-        .replace(' char', ' string').replace(' integer', ' int64')
+    a = in_string.replace('VARCHAR2', 'string') \
+        .replace(' CHAR', ' string').replace(' INTEGER', ' int64')
     # remove length, scale & precision which are not relevant in Big Query
     return re.sub(r"\([^0-9]*([0-9]+)[^0-9]*\)", "", a)
 
@@ -111,16 +111,16 @@ def for_loop_cursor_build(input_array):
     for r in input_array:
         # remove single line comments
         if r.find("--") >= 0:
-            l_string = l_string + ' ' + r[:r.find("--") - 1].replace("\n", " ") + ' '
+            l_string = l_string + ' ' + r[:r.find("--")].replace("\n", " ") + ' '
         else:
             l_string = l_string.replace(r'', '') + ' ' + r.replace("\n", " ") + ' '
     # remove multi-line comments
-    l_string = re.sub(r'\/\*.*\*\/', '', l_string)
-
+    l_string = re.sub(r'/\*.*\*/', '', l_string)
     while l_string.upper().find(" FOR ") >= 0:
+
         for_declare_variables = ''
-        for_iterator = re.finditer(r'( for )', l_string, re.IGNORECASE)
-        end_loop_iterator = re.finditer(r' end-loop; ', l_string.replace(' end loop; ', ' end-loop; '), re.IGNORECASE)
+        for_iterator = re.finditer(r'( FOR )', l_string, re.IGNORECASE)
+        end_loop_iterator = re.finditer(r' END-LOOP; ', l_string.replace(' END LOOP; ', ' END-LOOP; '), re.IGNORECASE)
 
         for_array = []
         end_array = []
@@ -152,22 +152,22 @@ def for_loop_cursor_build(input_array):
         for_cursor_name = sub_string[sub_string.upper().find(" IN ") + 4:sub_string.upper().find(" LOOP ")].strip()
         for_cursor_name = for_cursor_name.strip(")").strip("(")
         if for_cursor_name not in [i["name"] for i in cursor_dict_array]:
-            dict_for = {"name": 'l_crsr_' + str(cursor_num), "sql": for_cursor_name}
-            for_cursor_name = 'l_crsr_' + str(cursor_num)
+            dict_for = {"name": 'L_CRSR_' + str(cursor_num), "sql": for_cursor_name}
+            for_cursor_name = 'L_CRSR_' + str(cursor_num)
             cursor_dict_array.append(dict_for)
 
         var_iterator = re.findall(rf'\s+' + for_row_handle + '[.]{1}[a-zA-Z0-9_]+\s', sub_string, re.MULTILINE)
         for i in var_iterator:
             for_declare_variables = for_declare_variables + for_cursor_name + '_' + i.replace(for_row_handle + '.', '') \
-                .strip() + " varchar2(10); "
-        for_declare_variables = for_declare_variables + " " + for_cursor_name + "_cnt integer; "
-        for_declare_variables = for_declare_variables + " " + for_cursor_name + "_iter integer; "
+                .strip() + " VARCHAR2(10); "
+        for_declare_variables = for_declare_variables + " " + for_cursor_name + "_CNT integer; "
+        for_declare_variables = for_declare_variables + " " + for_cursor_name + "_ITER integer; "
         for i in for_declare_variables.split(";"):
             declare_array.append(i + ';')
-        declare_array.pop();
-        for_loop_build = "set " + for_cursor_name + "_cnt = (select count(*) from " + for_cursor_name + ");"
-        for_loop_build = for_loop_build + " while (" + for_cursor_name + "_iter <= " + for_cursor_name + \
-                         "_cnt) do set ("
+        declare_array.pop()
+        for_loop_build = "set " + for_cursor_name + "_CNT = (select count(*) from " + for_cursor_name + ");"
+        for_loop_build = for_loop_build + " while (" + for_cursor_name + "_ITER <= " + for_cursor_name + \
+                         "_CNT) do set ("
 
         for i in var_iterator:
             for_loop_build = for_loop_build + for_cursor_name + '_' + i.replace(for_row_handle + '.', '').strip() + ','
@@ -183,8 +183,15 @@ def for_loop_cursor_build(input_array):
         l_string = l_string[:for_loop_array[0][0]] + for_loop_build + l_string[l_string.upper().find(" LOOP ") + 6:]
         l_string = l_string.replace(for_row_handle + '.', '')
 
-    l_string = re.sub(r'([a-zA-Z0-9_]+)\s*\:\=\s*([a-zA-Z0-9_\']+)', r'set \1 = \2', l_string)
-    l_string = re.sub(r'([a-zA-Z0-9_]+)\.\s*([\(a-zA-Z0-9_\'\,\s]+\))\s*\;', r'call \1.\2;', l_string)
+    l_string = re.sub(r'([a-zA-Z0-9_]+)\s*:=\s*([a-zA-Z0-9_\']+)', r'set \1 = \2', l_string)
+    l_string = re.sub(r'([a-zA-Z0-9_]+)\.\s*([(a-zA-Z0-9_\',\s]+\))\s*;', r'call \1.\2;', l_string)
+    # to change the Oracle "select into" statements into set variable list as "select as struct" in big query
+    l_string = re.sub(r'SELECT\s+([a-zA-Z0-9_,\'\s()\-]+)\s+INTO\s+([(a-zA-Z0-9_,]+)\s+FROM\s+',
+                      r' set (\2) = select as struct \1 from ', l_string, re.IGNORECASE, re.MULTILINE)
+    l_string = re.sub(r'SELECT\s+([a-zA-Z0-9_,\'()\-]+)\s+INTO\s+([(a-zA-Z0-9_,]+)\s+FROM\s+',
+                      r' set (\2) = select as struct \1 from ', l_string, re.IGNORECASE, re.MULTILINE)
+    l_string = re.sub(r'SELECT\s+([a-zA-Z0-9_(),\-\'\s]+)\s+INTO\s+([(a-zA-Z0-9_,\s]+)\s+FROM\s+',
+                      r' set (\2) = select as struct \1 from ', l_string, re.IGNORECASE, re.MULTILINE)
     for i in l_string.split(";"):
         out_string_array.append(i + ';')
 
@@ -203,7 +210,7 @@ def read_file(file_with_path):
         b = file.readline()
         if not b:
             break
-        b = b.replace("||", " || ")
+        b = capitalize(b.replace("||", " || "))
         # Take a note of the stored procedure name
         if b.upper().find("PROCEDURE") >= 0:
             if len(proc_name) == 0:
